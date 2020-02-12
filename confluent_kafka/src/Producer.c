@@ -398,6 +398,128 @@ static PyObject *Producer_flush (Handle *self, PyObject *args,
         return cfl_PyInt_FromInt(qlen);
 }
 
+static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
+        CallState cs;
+        char errstr[256];
+        rd_kafka_resp_err_t err;
+        double tmout = 1;
+
+        if (!PyArg_ParseTuple(args, "|d", &tmout))
+                return NULL;
+
+        CallState_begin(self, &cs);
+
+        err = rd_kafka_init_transactions(self->rk, (int)(tmout * 1000), errstr, sizeof(errstr));
+
+        if (!CallState_end(self, &cs))
+                return NULL;
+
+        if (err) {
+                cfl_PyErr_Format(err, "Failed to initialize transactions within %.2f seconds", tmout);
+                return NULL;
+        }
+
+        Py_RETURN_NONE;
+}
+
+static PyObject *Producer_begin_transaction (Handle *self) {
+        CallState cs;
+        char errstr[256];
+        rd_kafka_resp_err_t err;
+
+        CallState_begin(self, &cs);
+
+        err = rd_kafka_begin_transaction(self->rk, errstr, sizeof(errstr));
+
+        if (!CallState_end(self, &cs))
+                return NULL;
+
+        if (err) {
+                cfl_PyErr_Format(err, errstr);
+                return NULL;
+        }
+
+        Py_RETURN_NONE;
+}
+
+static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *args) {
+        CallState cs;
+        char errstr[256];
+        rd_kafka_resp_err_t err;
+        PyObject *offsets = NULL;
+        rd_kafka_topic_partition_list_t *c_offsets;
+        char *group_id;
+        double timeout = 1;
+
+        if(!PyArg_ParseTuple(args, "sOd", &group_id, &offsets, &timeout))
+                return NULL;
+
+        if (!(c_offsets = py_to_c_parts(offsets)))
+                return NULL;
+
+        CallState_begin(self, &cs);
+
+        err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets, group_id, (int)timeout * 1000,
+                                                   errstr, sizeof(errstr));
+
+        if (!CallState_end(self, &cs))
+                return NULL;
+
+        if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                cfl_PyErr_Format(err, "Failed to send offsets to transaction with %d seconds: %s", errstr);
+                return NULL;
+        }
+
+        Py_RETURN_NONE;
+}
+
+static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
+        CallState cs;
+        char errstr[256];
+        rd_kafka_resp_err_t err;
+        double timeout = 1;
+
+        if(!PyArg_ParseTuple(args, "d", &timeout))
+                return NULL;
+
+        CallState_begin(self, &cs);
+
+        err = rd_kafka_commit_transaction(self->rk, (int)(timeout * 1000), errstr, sizeof(errstr));
+
+        if (!CallState_end(self, &cs))
+                return NULL;
+
+        if (err) {
+                cfl_PyErr_Format(err, errstr);
+                return NULL;
+        }
+        Py_RETURN_NONE;
+}
+
+static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
+        CallState cs;
+        char errstr[256];
+        rd_kafka_resp_err_t err;
+        double timeout = 1;
+
+        if(!PyArg_ParseTuple(args, "d", &timeout))
+                return NULL;
+
+        CallState_begin(self, &cs);
+
+        err = rd_kafka_abort_transaction(self->rk, (int)(timeout * 1000), errstr, sizeof(errstr));
+
+        if(!CallState_end(self, &cs))
+                return NULL;
+
+        if (err) {
+                cfl_PyErr_Format(err, errstr);
+                return NULL;
+        }
+
+        Py_RETURN_NONE;
+}
+
 static PyMethodDef Producer_methods[] = {
 	{ "produce", (PyCFunction)Producer_produce,
 	  METH_VARARGS|METH_KEYWORDS,
@@ -466,8 +588,73 @@ static PyMethodDef Producer_methods[] = {
         { "list_topics", (PyCFunction)list_topics, METH_VARARGS|METH_KEYWORDS,
           list_topics_doc
         },
-
-	{ NULL }
+        { "init_transactions", (PyCFunction)Producer_init_transactions, METH_VARARGS|METH_KEYWORDS,
+          ".. py:function:: init_transactions([timeout])\n"
+          "\n"
+          "  :param float timeout: Maximum time to block in seconds; Must be >= 1.0.\n"
+          "\n"
+          "  Initialize transactions for the producer instance.\n"
+          "\n"
+          "  On timeout the operation may continue in the background, depending on state,\n"
+          "  and it is okay to call init_transactions() again. "
+          "\n"
+        },
+        { "begin_transaction", (PyCFunction)Producer_begin_transaction, METH_NOARGS,
+          ".. py:function:: begin_transaction()\n"
+          "\n"
+          "  Begin a new transaction.\n"
+          "\n"
+          "  init_transactions() must have been called successfully (once) before this function is called. \n"
+          "\n"
+          "  Any messages produced, offsets sent(Producer.send_offsets_to_transaction()), etc, \n"
+          "  after the successful return of this function will be part of the transaction and \n"
+          "  committed or aborted atomically.\n"
+          "\n"
+          "  Complete the transaction by calling Producer.commit_transaction() or\n"
+          "  abort the transaction by calling Producer.abort_transaction().\n"
+          "\n"
+        },
+        { "send_offsets_to_transaction", (PyCFunction)Producer_send_offsets_to_transaction, METH_VARARGS|METH_KEYWORDS,
+          ".. py:function:: send_offsets_to_transaction([positions], [group_id], [timeout])\n"
+          "\n"
+          "  :param  list(TopicPartition) positions: current positions(offsets) for the list of partitions.\n"
+          "  :param  str group_id: group id for the consumer sending offsets to the transaction\n"
+          "  :param  float timeout: Amount of time to block in seconds **FIXME**\n"
+          "\n"
+          "  Sends consumer position to the consumer group coordinator for the consumer group identified by \n"
+          "  group_id, and marks the offsets as part part of the current transaction.\n"
+          "\n"
+          "  These offsets will be considered committed only if the transaction is\n"
+          "  committed successfully.\n"
+          "\n"
+        },
+        { "commit_transaction", (PyCFunction)Producer_commit_transaction, METH_VARARGS|METH_KEYWORDS,
+        ".. py:function:: commit_transaction([timeout])\n"
+        "\n"
+        "  :param float timeout: The amount of time to block in seconds.\n"
+        "\n"
+        "  Commit the current transaction (as started with Producer.begin_transaction).\n"
+        "\n"
+        "  As a convenience any outstanding messages will be automatically flushed (delivered)\n"
+        "  prior to performing the commit.\n"
+        "\n"
+        "  If any of the outstanding messages fail permanently the current transaction will enter\n"
+        "  the abortable error state. Prior to starting a new transaction, with Producer.begin_transaction,\n"
+        "  the application *must* first call Producer.abort_transaction\n"
+        "\n"
+        },
+        { "abort_transaction",(PyCFunction)Producer_abort_transaction,METH_VARARGS|METH_KEYWORDS,
+        ".. py:function:: abort_transaction([timeout])\n"
+        "\n"
+        "  :param float timeout: The amount of time to block in seconds.\n"
+        "\n"
+        "  Aborts the ongoing transaction.\n"
+        "\n"
+        "  Any outstanding messages will be purged from the queue and fail with \n"
+        "  RD_KAFKA_RESP_ERR__PURGE_INFLIGHT or RD_KAFKA_RESP_ERR__PURGE_QUEUE\n"
+        "\n"
+        },
+        { NULL }
 };
 
 
