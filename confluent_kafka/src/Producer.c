@@ -462,9 +462,10 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *ar
         err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets, group_id, (int)tmout * 1000,
                                                    errstr, sizeof(errstr));
 
-        if (!CallState_end(self, &cs))
+        if (!CallState_end(self, &cs)) {
                 rd_kafka_topic_partition_list_destroy(c_offsets);
                 return NULL;
+        }
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
                 rd_kafka_topic_partition_list_destroy(c_offsets);
