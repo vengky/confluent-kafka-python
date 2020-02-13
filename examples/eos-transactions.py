@@ -101,7 +101,7 @@ def main(args):
     })
 
     # Initialize producer transaction.
-    producer.init_transactions(5.0)
+    producer.init_transactions()
     # Start producer transaction.
     producer.begin_transaction()
 
