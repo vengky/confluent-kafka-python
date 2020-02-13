@@ -87,6 +87,7 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
 
     producer = kafka_cluster.producer({
+        'client.id': 'producer1',
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
         'debug': 'eos,broker',
@@ -118,8 +119,10 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     producer.commit_transaction(5.0)
 
     producer = kafka_cluster.producer({
+        'client.id': 'producer2',
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
+        'debug': 'eos,broker',
     })
 
     # ensure offset commits are visible prior to sending FetchOffsets request
