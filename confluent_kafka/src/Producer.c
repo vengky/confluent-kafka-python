@@ -402,7 +402,7 @@ static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double tmout = -1;
+        double tmout = -1.0f;
 
         if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
@@ -449,7 +449,7 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *ar
         PyObject *offsets = NULL;
         rd_kafka_topic_partition_list_t *c_offsets;
         char *group_id;
-        double tmout = -1;
+        double tmout = -1.0f;
 
         if(!PyArg_ParseTuple(args, "sO|d", &group_id, &offsets, &tmout))
                 return NULL;
@@ -481,7 +481,7 @@ static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double tmout = -1;
+        double tmout = -1.0f;
 
         if(!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
@@ -504,7 +504,7 @@ static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double tmout = -1;
+        double tmout = -1.0f;
 
         if(!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;

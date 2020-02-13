@@ -91,7 +91,6 @@ def test_send_offsets_committed_transaction(kafka_cluster):
         'client.id': 'producer1',
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
-        'debug': 'eos'
     })
 
     consumer_conf = {
