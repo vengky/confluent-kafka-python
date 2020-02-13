@@ -100,7 +100,7 @@ if __name__ == "__main__":
     })
 
     # Initialize producer transaction.
-    producer.init_transactions(2.0)
+    producer.init_transactions()
     # Start producer transaction.
     producer.begin_transaction()
 
@@ -121,11 +121,11 @@ if __name__ == "__main__":
         processed_value, processed_key = process_input(msg)
 
         producer.produce("output_topic", processed_value, processed_key, on_delivery=delivery_report)
-        producer.poll(1.0)
+        producer.poll()
 
     # commit processed messages to the transaction
-    producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()), 2.0)
+    producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()))
     # commit transaction
-    producer.commit_transaction(2.0)
+    producer.commit_transaction()
 
     consumer.close()

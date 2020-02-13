@@ -40,11 +40,12 @@ def test_commit_transaction(kafka_cluster):
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
+
     })
 
-    producer.init_transactions(5.0)
+    producer.init_transactions()
     transactional_produce(producer, output_topic, 100)
-    producer.commit_transaction(5.0)
+    producer.commit_transaction()
 
     assert consume_committed(kafka_cluster.client_conf(), output_topic) == 100
 
@@ -57,9 +58,9 @@ def test_abort_transaction(kafka_cluster):
         'error_cb': my_error_cb,
     })
 
-    producer.init_transactions(5.0)
+    producer.init_transactions()
     transactional_produce(producer, output_topic, 100)
-    producer.abort_transaction(5.0)
+    producer.abort_transaction()
 
     assert consume_committed(kafka_cluster.client_conf(), output_topic) == 0
 
@@ -72,12 +73,12 @@ def test_abort_retry_commit_transaction(kafka_cluster):
         'error_cb': my_error_cb,
     })
 
-    producer.init_transactions(5.0)
+    producer.init_transactions()
     transactional_produce(producer, output_topic, 100)
-    producer.abort_transaction(5.0)
+    producer.abort_transaction()
 
     transactional_produce(producer, output_topic, 25)
-    producer.commit_transaction(5.0)
+    producer.commit_transaction()
 
     assert consume_committed(kafka_cluster.client_conf(), output_topic) == 25
 
@@ -90,7 +91,7 @@ def test_send_offsets_committed_transaction(kafka_cluster):
         'client.id': 'producer1',
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
-        'debug': 'eos,protocol',
+        'debug': 'eos'
     })
 
     consumer_conf = {
@@ -99,8 +100,7 @@ def test_send_offsets_committed_transaction(kafka_cluster):
         'isolation.level': 'read_committed',
         'enable.auto.commit': False,
         'enable.partition.eof': True,
-        'error_cb': my_error_cb,
-        'debug': 'eos,protocol',
+        'error_cb': my_error_cb
     }
     consumer_conf.update(kafka_cluster.client_conf())
     consumer = Consumer(consumer_conf)
@@ -110,24 +110,22 @@ def test_send_offsets_committed_transaction(kafka_cluster):
 
     drain_queue(consumer)
 
-    producer.init_transactions(5.0)
+    producer.init_transactions(-1.0)
     transactional_produce(producer, output_topic, 100)
 
     print("=== Sending offsets {} to transaction ===".format(consumer.position(consumer.assignment())))
     producer.send_offsets_to_transaction(consumer_conf.get('group.id'),
-                                         consumer.position(consumer.assignment()),
-                                         5.0)
-    producer.commit_transaction(5.0)
+                                         consumer.position(consumer.assignment()))
+    producer.commit_transaction()
 
     producer = kafka_cluster.producer({
         'client.id': 'producer2',
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb,
-        'debug': 'eos,broker',
+        'error_cb': my_error_cb
     })
 
     # ensure offset commits are visible prior to sending FetchOffsets request
-    producer.init_transactions(5.0)
+    producer.init_transactions()
 
     print("=== Committed offsets for {} ===".format(consumer.committed(consumer.assignment())))
     committed = [tp.offset for tp in consumer.committed(consumer.assignment())]

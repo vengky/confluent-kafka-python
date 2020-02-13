@@ -402,7 +402,11 @@ PyObject *Message_error (Message *self, PyObject *ignore);
 
 extern PyTypeObject ProducerType;
 
-
+static __inline const int cfl_toMS(double tmout) {
+        if (tmout < 0)
+                return -1;
+        return (int)(tmout * 1000);
+}
 /****************************************************************************
  *
  *
@@ -461,3 +465,4 @@ void AdminTypes_AddObjects (PyObject *m);
  ****************************************************************************/
 
 extern PyTypeObject AdminType;
+

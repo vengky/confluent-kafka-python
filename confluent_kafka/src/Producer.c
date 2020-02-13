@@ -402,20 +402,20 @@ static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double tmout = 1;
+        double tmout = -1;
 
         if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_init_transactions(self->rk, (int)(tmout * 1000), errstr, sizeof(errstr));
+        err = rd_kafka_init_transactions(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
 
         if (!CallState_end(self, &cs))
                 return NULL;
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-                cfl_PyErr_Format(err, "Failed to initialize transactions within %.2f seconds", tmout);
+                cfl_PyErr_Format(err, "Failed to initialize transactions within %d seconds: %s", tmout, errstr);
                 return NULL;
         }
 
@@ -449,9 +449,9 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *ar
         PyObject *offsets = NULL;
         rd_kafka_topic_partition_list_t *c_offsets;
         char *group_id;
-        double tmout = 1;
+        double tmout = -1;
 
-        if(!PyArg_ParseTuple(args, "sOd", &group_id, &offsets, &tmout))
+        if(!PyArg_ParseTuple(args, "sO|d", &group_id, &offsets, &tmout))
                 return NULL;
 
         if (!(c_offsets = py_to_c_parts(offsets)))
@@ -459,7 +459,7 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *ar
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets, group_id, (int)tmout * 1000,
+        err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets, group_id, cfl_toMS(tmout),
                                                    errstr, sizeof(errstr));
 
         if (!CallState_end(self, &cs)) {
@@ -481,14 +481,14 @@ static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double timeout = 1;
+        double tmout = -1;
 
-        if(!PyArg_ParseTuple(args, "d", &timeout))
+        if(!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_commit_transaction(self->rk, (int)(timeout * 1000), errstr, sizeof(errstr));
+        err = rd_kafka_commit_transaction(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
 
         if (!CallState_end(self, &cs))
                 return NULL;
@@ -504,14 +504,14 @@ static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[256];
         rd_kafka_resp_err_t err;
-        double timeout = 1;
+        double tmout = -1;
 
-        if(!PyArg_ParseTuple(args, "d", &timeout))
+        if(!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_abort_transaction(self->rk, (int)(timeout * 1000), errstr, sizeof(errstr));
+        err = rd_kafka_abort_transaction(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
 
         if(!CallState_end(self, &cs))
                 return NULL;
