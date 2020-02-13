@@ -513,7 +513,7 @@ static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
         err = rd_kafka_abort_transaction(self->rk, cfl_toMS(tmout), errstr,
                                          sizeof(errstr));
 
-        if(!CallState_end(self, &cs))
+        if (!CallState_end(self, &cs))
                 return NULL;
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
