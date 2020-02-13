@@ -89,6 +89,7 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
         'error_cb': my_error_cb,
+        'debug': 'eos,broker',
     })
 
     consumer_conf = {
