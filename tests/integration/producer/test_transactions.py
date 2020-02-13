@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-#
-# Copyright 2019 Confluent Inc.
+# Copyright 2020 Confluent Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -107,9 +106,9 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     kafka_cluster.seed_topic(input_topic)
     consumer.subscribe([input_topic])
 
-    drain_queue(consumer)
+    read_all_msgs(consumer)
 
-    producer.init_transactions(-1.0)
+    producer.init_transactions()
     transactional_produce(producer, output_topic, 100)
 
     print("=== Sending offsets {} to transaction ===".format(consumer.position(consumer.assignment())))
@@ -126,8 +125,9 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     # ensure offset commits are visible prior to sending FetchOffsets request
     producer.init_transactions()
 
-    print("=== Committed offsets for {} ===".format(consumer.committed(consumer.assignment())))
-    committed = [tp.offset for tp in consumer.committed(consumer.assignment())]
+    committed = consumer.committed(consumer.assignment())
+    print("=== Committed offsets for {} ===".format(committed))
+    committed = [tp.offset for tp in committed]
 
     consumer.close()
 
@@ -142,21 +142,17 @@ def transactional_produce(producer, topic, num_messages):
 
     for value in ['test-data{}'.format(i) for i in range(0, num_messages)]:
         producer.produce(topic, value, on_delivery=delivery)
-        producer.poll(1.0)
+        producer.poll()
 
     producer.flush()
 
 
-def drain_queue(consumer):
+def read_all_msgs(consumer):
     msg_cnt = 0
     eof = {}
     print("=== Draining {} ===".format(consumer.assignment()))
     while (True):
         msg = consumer.poll(timeout=1.0)
-
-        if len(consumer.assignment()) == 0:
-            print("=== Awaiting assignment ===")
-            continue
 
         if msg is None:
             continue
@@ -186,7 +182,7 @@ def consume_committed(conf, topic):
     consumer = Consumer(consumer_conf)
     consumer.subscribe([topic])
 
-    msg_cnt = drain_queue(consumer)
+    msg_cnt = read_all_msgs(consumer)
 
     consumer.close()
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright 2019 Confluent Inc.
+# Copyright 2020 Confluent Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,8 +31,7 @@ In order to achieve exactly-once semantics we use the idempotent producer with t
 transaction aware consumer.
 
 The following assumptions apply to the source data(input_topic below):
-    1. The input source, input_topic below, was populated using a transactional producer
-    2. There are no duplicates in the input topic
+    1. There are no duplicates in the input topic.
 
 ##  A quick note about exactly-once-processing guarantees and Kafka. ##
 
@@ -43,8 +42,9 @@ single copy of any record is passed to the producer.
 Special care needs to be taken when expanding the consumer group to multiple members.
 Review KIP-447 for complete details.
 """
-
+import argparse
 from base64 import b64encode
+from uuid import uuid4
 
 from confluent_kafka import Producer, Consumer, KafkaError
 
@@ -75,19 +75,20 @@ def delivery_report(err, msg):
     """
     if err:
         print('Message delivery failed ({} [{}]): {}'.format(msg.topic(), str(msg.partition()), err))
-    else:
-        print('Message delivered to {} [{}] at offset [{}]: {} | {}'.format(msg.topic(), msg.partition(),
-                                                                            msg.offset(), msg.key(), msg.value()))
+    # else:
+    #     print('Message delivered to {} [{}] at offset [{}]: {} | {}'.format(msg.topic(), msg.partition(),
+    #                                                                         msg.offset(), msg.key(), msg.value()))
 
 
-if __name__ == "__main__":
-    brokers = "PLAINTEXT://mybroker:9092"
+def main(args):
+    brokers = args.brokers
+    group_id = args.group_id
 
-    group_id = "eos-example-consumer"
     consumer = Consumer({
         'bootstrap.servers': brokers,
         'group.id': group_id,
         'auto.offset.reset': 'earliest',
+        # Do not advance committed offsets outside of the transaction.
         'enable.auto.commit': False,
         'enable.partition.eof': True,
     })
@@ -100,11 +101,13 @@ if __name__ == "__main__":
     })
 
     # Initialize producer transaction.
-    producer.init_transactions()
+    producer.init_transactions(5.0)
     # Start producer transaction.
     producer.begin_transaction()
 
     eof = {}
+    msg_cnt = 0
+    print("=== Starting Consume-Transform-Process loop ===")
     while True:
         msg = consumer.poll(timeout=1.0)
 
@@ -113,19 +116,37 @@ if __name__ == "__main__":
 
         if msg.error():
             if msg.error().code() == KafkaError._PARTITION_EOF:
-                eof[(msg.topic(), msg.partition())] = True
+                topic, partition = msg.topic(), msg.partition()
+                eof[(topic, partition)] = True
+                print("=== Reached the end of {}[{}]====".format(topic, partition))
                 if len(eof) == len(consumer.assignment()):
+                    print("=== Terminating process after reading all inputs ====")
                     break
             continue
 
-        processed_value, processed_key = process_input(msg)
-
+        msg_cnt += 1
+        processed_key, processed_value = process_input(msg)
         producer.produce("output_topic", processed_value, processed_key, on_delivery=delivery_report)
         producer.poll()
 
-    # commit processed messages to the transaction
+        if msg_cnt % 100 == 0:
+            print("=== Rolling transaction at input offset {} ===".format(msg.offset()))
+            producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()))
+            producer.commit_transaction()
+            producer.begin_transaction()
+
+    # commit processed message offsets to the transaction
     producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()))
     # commit transaction
     producer.commit_transaction()
 
     consumer.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Exactly Once Semantics(EOS) example")
+    parser.add_argument('-b', dest="brokers", required=True, help="Bootstrap broker(s) (host[:port])")
+    parser.add_argument('-g', dest="group_id", default=str(uuid4()),
+                        help="Consumer group; required if running 'consumer' mode")
+
+    main(parser.parse_args())

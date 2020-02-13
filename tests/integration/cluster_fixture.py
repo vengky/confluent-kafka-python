@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-#
-# Copyright 2019 Confluent Inc.
+# Copyright 2020 Confluent Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -79,10 +78,11 @@ class ExternalClusterFixture(object):
         return Producer(self.client_conf(updates))
 
     def consumer(self, updates):
-        if 'group.id' not in updates:
-            updates.update({'group.id': uuid1()})
+        conf = self.client_conf(updates)
+        if 'group.id' not in conf:
+            conf.update({'group.id': uuid1()})
 
-        return Consumer(self.client_conf(updates))
+        return Consumer(conf)
 
     @property
     def schema_registry(self):

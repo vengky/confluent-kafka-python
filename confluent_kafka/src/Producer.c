@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Confluent Inc.
+ * Copyright 2020 Confluent Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -360,7 +360,7 @@ static PyObject *Producer_poll (Handle *self, PyObject *args,
 	int r;
 	static char *kws[] = { "timeout", NULL };
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "d", kws, &tmout))
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|d", kws, &tmout))
 		return NULL;
 
 	r = Producer_poll0(self, (int)(tmout * 1000));
@@ -400,7 +400,7 @@ static PyObject *Producer_flush (Handle *self, PyObject *args,
 
 static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
         CallState cs;
-        char errstr[256];
+        char errstr[512];
         rd_kafka_resp_err_t err;
         double tmout = -1.0f;
 
@@ -409,13 +409,14 @@ static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_init_transactions(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
+        err = rd_kafka_init_transactions(self->rk, cfl_toMS(tmout), errstr,
+                                         sizeof(errstr));
 
         if (!CallState_end(self, &cs))
                 return NULL;
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-                cfl_PyErr_Format(err, "Failed to initialize transactions within %d seconds: %s", tmout, errstr);
+                cfl_PyErr_Format(err, "%s", errstr);
                 return NULL;
         }
 
@@ -423,35 +424,30 @@ static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
 }
 
 static PyObject *Producer_begin_transaction (Handle *self) {
-        CallState cs;
-        char errstr[256];
+        char errstr[512];
         rd_kafka_resp_err_t err;
-
-        CallState_begin(self, &cs);
 
         err = rd_kafka_begin_transaction(self->rk, errstr, sizeof(errstr));
 
-        if (!CallState_end(self, &cs))
-                return NULL;
-
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-                cfl_PyErr_Format(err, errstr);
+                cfl_PyErr_Format(err, "%s", errstr);
                 return NULL;
         }
 
         Py_RETURN_NONE;
 }
 
-static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *args) {
+static PyObject *Producer_send_offsets_to_transaction(Handle *self,
+                                                      PyObject *args) {
         CallState cs;
-        char errstr[256];
+        char errstr[512];
         rd_kafka_resp_err_t err;
         PyObject *offsets = NULL;
         rd_kafka_topic_partition_list_t *c_offsets;
         char *group_id;
         double tmout = -1.0f;
 
-        if(!PyArg_ParseTuple(args, "sO|d", &group_id, &offsets, &tmout))
+        if (!PyArg_ParseTuple(args, "sO|d", &group_id, &offsets, &tmout))
                 return NULL;
 
         if (!(c_offsets = py_to_c_parts(offsets)))
@@ -459,36 +455,39 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self, PyObject *ar
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets, group_id, cfl_toMS(tmout),
+        err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets,
+                                                   group_id, cfl_toMS(tmout),
                                                    errstr, sizeof(errstr));
 
-        if (!CallState_end(self, &cs)) {
-                rd_kafka_topic_partition_list_destroy(c_offsets);
-                return NULL;
-        }
+        if (!CallState_end(self, &cs))
+                goto error;
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-                rd_kafka_topic_partition_list_destroy(c_offsets);
-                cfl_PyErr_Format(err, "Failed to send offsets to transaction with in %.2f seconds: %s", tmout, errstr);
-                return NULL;
+                cfl_PyErr_Format(err, "%s", errstr);
+                goto error;
         }
 
         rd_kafka_topic_partition_list_destroy(c_offsets);
         Py_RETURN_NONE;
+
+error:
+        rd_kafka_topic_partition_list_destroy(c_offsets);
+        return NULL;
 }
 
 static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
         CallState cs;
-        char errstr[256];
+        char errstr[512];
         rd_kafka_resp_err_t err;
         double tmout = -1.0f;
 
-        if(!PyArg_ParseTuple(args, "|d", &tmout))
+        if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_commit_transaction(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
+        err = rd_kafka_commit_transaction(self->rk, cfl_toMS(tmout), errstr,
+                                          sizeof(errstr));
 
         if (!CallState_end(self, &cs))
                 return NULL;
@@ -502,16 +501,17 @@ static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
 
 static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
         CallState cs;
-        char errstr[256];
+        char errstr[512];
         rd_kafka_resp_err_t err;
         double tmout = -1.0f;
 
-        if(!PyArg_ParseTuple(args, "|d", &tmout))
+        if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_abort_transaction(self->rk, cfl_toMS(tmout), errstr, sizeof(errstr));
+        err = rd_kafka_abort_transaction(self->rk, cfl_toMS(tmout), errstr,
+                                         sizeof(errstr));
 
         if(!CallState_end(self, &cs))
                 return NULL;
@@ -595,12 +595,24 @@ static PyMethodDef Producer_methods[] = {
         { "init_transactions", (PyCFunction)Producer_init_transactions, METH_VARARGS|METH_KEYWORDS,
           ".. py:function:: init_transactions([timeout])\n"
           "\n"
-          "  :param float timeout: Maximum time to block in seconds; Must be >= 1.0.\n"
+          "  :param float timeout: Maximum time to block in seconds.\n"
           "\n"
           "  Initialize transactions for the producer instance.\n"
           "\n"
-          "  On timeout the operation may continue in the background, depending on state,\n"
-          "  and it is okay to call init_transactions() again. "
+          "  This function ensures any transactions initiated by previous instances\n"
+          "  of the producer with the same transactional.id are completed.\n"
+          "  If the previous instance failed with a transaction in progress the\n"
+          "  previous transaction will be aborted.\n"
+          "  This function needs to be called before any other transactional or\n"
+          "  produce functions are called when the transactional.id is configured.\n"
+          "\n"
+          "  If the last transaction had begun completion (following transaction commit)\n"
+          "  but not yet finished, this function will await the previous transaction's\n"
+          "  completion.\n"
+          "\n"
+          " When any previous transactions have been fenced this function\n"
+          " will acquire the internal producer id and epoch, used in all future\n"
+          " transactional messages issued by this producer instance.\n"
           "\n"
         },
         { "begin_transaction", (PyCFunction)Producer_begin_transaction, METH_NOARGS,
@@ -616,6 +628,15 @@ static PyMethodDef Producer_methods[] = {
           "\n"
           "  Complete the transaction by calling Producer.commit_transaction() or\n"
           "  abort the transaction by calling Producer.abort_transaction().\n"
+          "\n"
+          "  The offsets should be the next message your application will consume,\n"
+          "  i.e., the last processed message's offset + 1 for each partition.\n"
+          "  Either track the offsets manually during processing or use\n"
+          "  rd_kafka_position() (on the consumer) to get the current offsets for\n"
+          "  the partitions assigned to the consumer.\n"
+          "\n"
+          "  Use this method at the end of a consume-transform-produce loop prior\n"
+          "  to committing the transaction with rd_kafka_commit_transaction().\n"
           "\n"
         },
         { "send_offsets_to_transaction", (PyCFunction)Producer_send_offsets_to_transaction, METH_VARARGS|METH_KEYWORDS,
@@ -647,10 +668,10 @@ static PyMethodDef Producer_methods[] = {
         "  the application *must* first call Producer.abort_transaction\n"
         "\n"
         },
-        { "abort_transaction",(PyCFunction)Producer_abort_transaction,METH_VARARGS|METH_KEYWORDS,
+        { "abort_transaction", (PyCFunction)Producer_abort_transaction, METH_VARARGS|METH_KEYWORDS,
         ".. py:function:: abort_transaction([timeout])\n"
         "\n"
-        "  :param float timeout: The amount of time to block in seconds.\n"
+        "  :param float timeout: The maximum amount of time to block waiting for transaction to abort in seconds.\n"
         "\n"
         "  Aborts the ongoing transaction.\n"
         "\n"
