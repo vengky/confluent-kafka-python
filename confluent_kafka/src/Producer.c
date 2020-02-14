@@ -593,7 +593,7 @@ static PyMethodDef Producer_methods[] = {
           list_topics_doc
         },
         { "init_transactions", (PyCFunction)Producer_init_transactions,
-                                METH_VARARGS|METH_KEYWORDS,
+                              METH_VARARGS|METH_KEYWORDS,
           ".. py:function:: init_transactions([timeout])\n"
           "\n"
           "  :param float timeout: Maximum time to block in seconds.\n"
@@ -605,7 +605,7 @@ static PyMethodDef Producer_methods[] = {
           "  completed. If the previous instance failed with a transaction in\n"
           "  progress the previous transaction will be aborted.\n"
           "  This function needs to be called before any other transactional\n"
-          "  or produce functions are called when the transactional.id is\n
+          "  or produce functions are called when the transactional.id is\n"
           "  configured.\n"
           "\n"
           "  If the last transaction had begun completion (following\n"
