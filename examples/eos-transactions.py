@@ -25,23 +25,26 @@
 
 
 """
-The following example demonstrates how to perform a consume-transform-produce loop with exactly-once semantics.
+The following example demonstrates how to perform a consume-transform-produce
+loop with exactly-once semantics.
 
-In order to achieve exactly-once semantics we use the idempotent producer with transactions enabled and a single
-transaction aware consumer.
+In order to achieve exactly-once semantics we use the idempotent producer with
+transactions enabled and a single transaction aware consumer.
 
 The following assumptions apply to the source data(input_topic below):
     1. There are no duplicates in the input topic.
 
 ##  A quick note about exactly-once-processing guarantees and Kafka. ##
 
-Exactly once, and idempotence, guarantees start after the producer has been provided a record. There is no way for a
-producer to identify a record as a duplicate in isolation. Instead it is the application's job to ensure that only a
-single copy of any record is passed to the producer.
+Exactly once, and idempotence, guarantees start after the producer has been
+provided a record. There is no way for a producer to identify a record as a
+duplicate in isolation. Instead it is the application's job to ensure that only
+a single copy of any record is passed to the producer.
 
 Special care needs to be taken when expanding the consumer group to multiple members.
 Review KIP-447 for complete details.
 """
+
 import argparse
 from base64 import b64encode
 from uuid import uuid4
@@ -74,10 +77,11 @@ def delivery_report(err, msg):
     :returns: None
     """
     if err:
-        print('Message delivery failed ({} [{}]): {}'.format(msg.topic(), str(msg.partition()), err))
-    # else:
-    #     print('Message delivered to {} [{}] at offset [{}]: {} | {}'.format(msg.topic(), msg.partition(),
-    #                                                                         msg.offset(), msg.key(), msg.value()))
+        print('Message delivery failed ({} [{}]): {}'.format(
+            msg.topic(), str(msg.partition()), err))
+    else:
+        print('Message delivered to {} [{}] at offset [{}]: {} | {}'.format(
+            msg.topic(), msg.partition(), msg.offset(), msg.key(), msg.value()))
 
 
 def main(args):
@@ -118,25 +122,30 @@ def main(args):
             if msg.error().code() == KafkaError._PARTITION_EOF:
                 topic, partition = msg.topic(), msg.partition()
                 eof[(topic, partition)] = True
-                print("=== Reached the end of {}[{}]====".format(topic, partition))
+                print("=== Reached the end of {}[{}]====".format(topic,
+                                                                 partition))
                 if len(eof) == len(consumer.assignment()):
-                    print("=== Terminating process after reading all inputs ====")
+                    print("=== Reached end of input ===")
                     break
             continue
 
         msg_cnt += 1
         processed_key, processed_value = process_input(msg)
-        producer.produce("output_topic", processed_value, processed_key, on_delivery=delivery_report)
+        producer.produce("output_topic", processed_value, processed_key,
+                         on_delivery=delivery_report)
         producer.poll()
 
         if msg_cnt % 100 == 0:
-            print("=== Rolling transaction at input offset {} ===".format(msg.offset()))
-            producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()))
+            print("=== Rolling transaction at input offset {} ===".format(
+                msg.offset()))
+            producer.send_offsets_to_transaction(group_id, consumer.position(
+                consumer.assignment()))
             producer.commit_transaction()
             producer.begin_transaction()
 
     # commit processed message offsets to the transaction
-    producer.send_offsets_to_transaction(group_id, consumer.position(consumer.assignment()))
+    producer.send_offsets_to_transaction(group_id, consumer.position(
+        consumer.assignment()))
     # commit transaction
     producer.commit_transaction()
 
@@ -144,9 +153,11 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Exactly Once Semantics(EOS) example")
-    parser.add_argument('-b', dest="brokers", required=True, help="Bootstrap broker(s) (host[:port])")
+    parser = argparse.ArgumentParser(
+        description="Exactly Once Semantics(EOS) example")
+    parser.add_argument('-b', dest="brokers", required=True,
+                        help="Bootstrap broker(s) (host[:port])")
     parser.add_argument('-g', dest="group_id", default=str(uuid4()),
-                        help="Consumer group; required if running 'consumer' mode")
+                        help="Consumer group")
 
     main(parser.parse_args())
