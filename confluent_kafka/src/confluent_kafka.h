@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Confluent Inc.
+ * Copyright 2016 Confluent Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,6 +66,16 @@
  #endif
 #endif
 
+/**
+ * Avoid unused function warnings
+ */
+#if _WIN32
+#define CFL_UNUSED
+#define CFL_INLINE __inline
+#else
+#define CFL_UNUSED __attribute__((unused))
+#define CFL_INLINE __inline
+#endif
 
 /**
  * librdkafka feature detection
@@ -402,7 +412,7 @@ PyObject *Message_error (Message *self, PyObject *ignore);
 
 extern PyTypeObject ProducerType;
 
-static __inline const int cfl_toMS(double tmout) {
+static CFL_UNUSED CFL_INLINE int cfl_timeout_ms(double tmout) {
         if (tmout < 0)
                 return -1;
         return (int)(tmout * 1000);
@@ -465,4 +475,3 @@ void AdminTypes_AddObjects (PyObject *m);
  ****************************************************************************/
 
 extern PyTypeObject AdminType;
-

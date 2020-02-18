@@ -17,7 +17,7 @@
 
 
 # This is a simple example of a `read-process-write` application
-# using Kafka's transaction API.
+# using Kafka's transactional API.
 #
 # See the following blog for additional information.
 # https://www.confluent.io/blog/transactions-apache-kafka/
@@ -118,9 +118,9 @@ def main(args):
         if msg is None:
             continue
 
+        topic, partition = msg.topic(), msg.partition()
         if msg.error():
             if msg.error().code() == KafkaError._PARTITION_EOF:
-                topic, partition = msg.topic(), msg.partition()
                 eof[(topic, partition)] = True
                 print("=== Reached the end of {}[{}]====".format(topic,
                                                                  partition))
@@ -128,6 +128,8 @@ def main(args):
                     print("=== Reached end of input ===")
                     break
             continue
+        # clear EOF if a new message has been received
+        eof.pop((topic, partition), None)
 
         msg_cnt += 1
         processed_key, processed_value = process_input(msg)
@@ -157,7 +159,7 @@ if __name__ == "__main__":
         description="Exactly Once Semantics(EOS) example")
     parser.add_argument('-b', dest="brokers", required=True,
                         help="Bootstrap broker(s) (host[:port])")
-    parser.add_argument('-g', dest="group_id", default=str(uuid4()),
+    parser.add_argument('-g', dest="group_id", default="eos_example_" + str(uuid4()),
                         help="Consumer group")
 
     main(parser.parse_args())

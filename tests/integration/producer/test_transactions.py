@@ -15,22 +15,37 @@
 # See the License for the specific language governing permissions and
 # limit
 #
+import inspect
+import sys
 from uuid import uuid1
 
 from confluent_kafka import Consumer, KafkaError
 
 
-def my_error_cb(err):
-    """ Reports global/generic errors to aid in troubleshooting test failures. """
-    print(err)
+def called_by():
+    if sys.version_info < (3, 5):
+        return inspect.stack()[1][3]
+
+    return inspect.stack()[1].function
 
 
-def delivery(err, msg):
-    """ Reports failed message delivery to aid in troubleshooting test failures. """
-    if err:
-        print('Message delivery failed (%s [%s]): %s' %
-              (msg.topic(), str(msg.partition()), err))
-        return
+def prefixed_error_cb(prefix):
+    def error_cb(err):
+        """ Reports global/generic errors to aid in troubleshooting test failures. """
+        print("[{}]: {}".format(prefix, err))
+
+    return error_cb
+
+
+def prefixed_delivery_cb(prefix):
+    def delivery_err(err, msg):
+        """ Reports failed message delivery to aid in troubleshooting test failures. """
+        if err:
+            print("[{}]: Message delivery failed (%s [%s]): %s".format(prefix,
+                                                                       (msg.topic(), str(msg.partition()), err)))
+            return
+
+    return delivery_err
 
 
 def test_commit_transaction(kafka_cluster):
@@ -38,8 +53,7 @@ def test_commit_transaction(kafka_cluster):
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb,
-
+        'error_cb': prefixed_error_cb('test_commit_transaction'),
     })
 
     producer.init_transactions()
@@ -54,7 +68,7 @@ def test_abort_transaction(kafka_cluster):
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb,
+        'error_cb': prefixed_error_cb('test_abort_transaction'),
     })
 
     producer.init_transactions()
@@ -69,7 +83,7 @@ def test_abort_retry_commit_transaction(kafka_cluster):
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb,
+        'error_cb': prefixed_error_cb('test_abort_retry_commit_transaction'),
     })
 
     producer.init_transactions()
@@ -85,20 +99,19 @@ def test_abort_retry_commit_transaction(kafka_cluster):
 def test_send_offsets_committed_transaction(kafka_cluster):
     input_topic = kafka_cluster.create_topic("input_topic" + str(uuid1()))
     output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
-
+    error_cb = prefixed_error_cb('test_send_offsets_committed_transaction')
     producer = kafka_cluster.producer({
         'client.id': 'producer1',
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb,
+        'error_cb': error_cb,
     })
 
     consumer_conf = {
         'group.id': str(uuid1()),
         'auto.offset.reset': 'earliest',
-        'isolation.level': 'read_committed',
         'enable.auto.commit': False,
         'enable.partition.eof': True,
-        'error_cb': my_error_cb
+        'error_cb': error_cb
     }
     consumer_conf.update(kafka_cluster.client_conf())
     consumer = Consumer(consumer_conf)
@@ -111,27 +124,27 @@ def test_send_offsets_committed_transaction(kafka_cluster):
     producer.init_transactions()
     transactional_produce(producer, output_topic, 100)
 
-    print("=== Sending offsets {} to transaction ===".format(consumer.position(consumer.assignment())))
+    consumer_position = consumer.position(consumer.assignment())
+    print("=== Sending offsets {} to transaction ===".format(consumer_position))
     producer.send_offsets_to_transaction(consumer_conf.get('group.id'),
-                                         consumer.position(consumer.assignment()))
+                                         consumer_position)
     producer.commit_transaction()
 
-    producer = kafka_cluster.producer({
+    producer2 = kafka_cluster.producer({
         'client.id': 'producer2',
         'transactional.id': 'example_transactional_id',
-        'error_cb': my_error_cb
+        'error_cb': error_cb
     })
 
     # ensure offset commits are visible prior to sending FetchOffsets request
-    producer.init_transactions()
+    producer2.init_transactions()
 
-    committed = consumer.committed(consumer.assignment())
-    print("=== Committed offsets for {} ===".format(committed))
-    committed = [tp.offset for tp in committed]
+    committed_offsets = consumer.committed(consumer.assignment())
+    print("=== Committed offsets for {} ===".format(committed_offsets))
+
+    assert [tp.offset for tp in committed_offsets] == [100]
 
     consumer.close()
-
-    assert committed == [100]
 
 
 def transactional_produce(producer, topic, num_messages):
@@ -141,13 +154,23 @@ def transactional_produce(producer, topic, num_messages):
     producer.begin_transaction()
 
     for value in ['test-data{}'.format(i) for i in range(0, num_messages)]:
-        producer.produce(topic, value, on_delivery=delivery)
-        producer.poll()
+        producer.produce(topic, value, on_delivery=prefixed_delivery_cb(called_by()))
+        producer.poll(0.0)
 
     producer.flush()
 
 
 def read_all_msgs(consumer):
+    """
+    Consumes all messages in the consumer assignment.
+
+    This method assumes the consumer has not already read all of the
+    messages available in a partition.
+
+    :param consumer:
+    :returns: total messages read
+    :rtype: int
+    """
     msg_cnt = 0
     eof = {}
     print("=== Draining {} ===".format(consumer.assignment()))
@@ -157,12 +180,15 @@ def read_all_msgs(consumer):
         if msg is None:
             continue
 
+        topic, partition = msg.topic(), msg.partition()
         if msg.error():
             if msg.error().code() == KafkaError._PARTITION_EOF:
-                eof[(msg.topic(), msg.partition())] = True
+                eof[(topic, partition)] = True
                 if len(eof) == len(consumer.assignment()):
                     break
             continue
+
+        eof.pop((topic, partition), None)
         msg_cnt += 1
 
     return msg_cnt
@@ -173,10 +199,9 @@ def consume_committed(conf, topic):
 
     consumer_conf = {'group.id': str(uuid1()),
                      'auto.offset.reset': 'earliest',
-                     'isolation.level': 'read_committed',
                      'enable.auto.commit': False,
                      'enable.partition.eof': True,
-                     'error_cb': my_error_cb, }
+                     'error_cb': prefixed_delivery_cb(called_by()), }
 
     consumer_conf.update(conf)
     consumer = Consumer(consumer_conf)

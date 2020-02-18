@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Confluent Inc.
+ * Copyright 2016 Confluent Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -356,12 +356,12 @@ static int Producer_poll0 (Handle *self, int tmout) {
 
 static PyObject *Producer_poll (Handle *self, PyObject *args,
 				    PyObject *kwargs) {
-	double tmout;
+        double tmout = -1.0;
 	int r;
 	static char *kws[] = { "timeout", NULL };
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|d", kws, &tmout))
-		return NULL;
+        if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|d", kws, &tmout))
+                return NULL;
 
 	r = Producer_poll0(self, (int)(tmout * 1000));
 	if (r == -1)
@@ -402,14 +402,14 @@ static PyObject *Producer_init_transactions (Handle *self, PyObject *args) {
         CallState cs;
         char errstr[512];
         rd_kafka_resp_err_t err;
-        double tmout = -1.0f;
+        double tmout = -1.0;
 
         if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_init_transactions(self->rk, cfl_toMS(tmout), errstr,
+        err = rd_kafka_init_transactions(self->rk, cfl_timeout_ms(tmout), errstr,
                                          sizeof(errstr));
 
         if (!CallState_end(self, &cs))
@@ -445,7 +445,7 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self,
         PyObject *offsets = NULL;
         rd_kafka_topic_partition_list_t *c_offsets;
         char *group_id;
-        double tmout = -1.0f;
+        double tmout = -1.0;
 
         if (!PyArg_ParseTuple(args, "sO|d", &group_id, &offsets, &tmout))
                 return NULL;
@@ -456,37 +456,33 @@ static PyObject *Producer_send_offsets_to_transaction(Handle *self,
         CallState_begin(self, &cs);
 
         err = rd_kafka_send_offsets_to_transaction(self->rk, c_offsets,
-                                                   group_id, cfl_toMS(tmout),
+                                                   group_id, cfl_timeout_ms(tmout),
                                                    errstr, sizeof(errstr));
+        rd_kafka_topic_partition_list_destroy(c_offsets);
 
         if (!CallState_end(self, &cs))
-                goto error;
+                return NULL;
 
         if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
                 cfl_PyErr_Format(err, "%s", errstr);
-                goto error;
+                return NULL;
         }
 
-        rd_kafka_topic_partition_list_destroy(c_offsets);
         Py_RETURN_NONE;
-
-error:
-        rd_kafka_topic_partition_list_destroy(c_offsets);
-        return NULL;
 }
 
 static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[512];
         rd_kafka_resp_err_t err;
-        double tmout = -1.0f;
+        double tmout = -1.0;
 
         if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_commit_transaction(self->rk, cfl_toMS(tmout), errstr,
+        err = rd_kafka_commit_transaction(self->rk, cfl_timeout_ms(tmout), errstr,
                                           sizeof(errstr));
 
         if (!CallState_end(self, &cs))
@@ -496,6 +492,7 @@ static PyObject *Producer_commit_transaction(Handle *self, PyObject *args) {
                 cfl_PyErr_Format(err, errstr);
                 return NULL;
         }
+
         Py_RETURN_NONE;
 }
 
@@ -503,14 +500,14 @@ static PyObject *Producer_abort_transaction(Handle *self, PyObject *args) {
         CallState cs;
         char errstr[512];
         rd_kafka_resp_err_t err;
-        double tmout = -1.0f;
+        double tmout = -1.0;
 
         if (!PyArg_ParseTuple(args, "|d", &tmout))
                 return NULL;
 
         CallState_begin(self, &cs);
 
-        err = rd_kafka_abort_transaction(self->rk, cfl_toMS(tmout), errstr,
+        err = rd_kafka_abort_transaction(self->rk, cfl_timeout_ms(tmout), errstr,
                                          sizeof(errstr));
 
         if (!CallState_end(self, &cs))
@@ -594,9 +591,26 @@ static PyMethodDef Producer_methods[] = {
         },
         { "init_transactions", (PyCFunction)Producer_init_transactions,
                               METH_VARARGS|METH_KEYWORDS,
-          ".. py:function:: init_transactions([timeout])\n"
+          ".. py:function: init_transactions([timeout])\n"
           "\n"
           "  :param float timeout: Maximum time to block in seconds.\n"
+          "\n"
+          "  :raises: KafkaError._TIMED_OUT if the transaction coordinator"
+          "     could be not be contacted within timeout\n"
+          "  :raises: KafkaError.COORDINATOR_NOT_AVAILABLE If the \n"
+          "     transaction coordinator is not available\n"
+          "  :raises: KafkaError.CONCURRENT_TRANSACTIONS if a previous\n"
+          "     transaction\n"
+          "  :raises: KafkaError._STATE if transactions have already been\n"
+          "     started or upon fatal error\n"
+          "  :raises: KafkaError._UNSUPPORTED_FEATURE if the broker(s) does\n"
+          "     not support transactions(<Apache Kafka 0.11). This also\n"
+          "     raises a fatal error\n"
+          "  :raises: KafkaError.INVALID_TRANSACTION_TIMEOUT if the\n"
+          "     configured transaction.timeout.ms is outside the \n"
+          "     broker-configured range, this also raises a fatal error\n"
+          "  :raises: KafkaError._NOT_CONFIGURED if the transactions have not\n"
+          "     configured for the producer instance\n"
           "\n"
           "  Initialize transactions for the producer instance.\n"
           "\n"
@@ -612,37 +626,31 @@ static PyMethodDef Producer_methods[] = {
           "  transaction commit) but not yet finished, this function will\n"
           "  await the previous transaction's completion.\n"
           "\n"
-          " When any previous transactions have been fenced this function\n"
-          " will acquire the internal producer id and epoch, used in all\n"
-          " future transactional messages issued by this producer instance.\n"
+          "  When any previous transactions have been fenced this function\n"
+          "  will acquire the internal producer id and epoch, used in all\n"
+          "  future transactional messages issued by this producer instance.\n"
           "\n"
         },
         { "begin_transaction", (PyCFunction)Producer_begin_transaction,
                                 METH_NOARGS,
           ".. py:function:: begin_transaction()\n"
           "\n"
+          "  :raises: KafkaError._STATE if transactions have already been\n"
+          "     started or upon fatal error\n"
+          "  :raises: KafkaError._NOT_CONFIGURED if the transactions have not\n"
+          "     configured for the producer instance\n"
+          "\n"
           "  Begin a new transaction.\n"
           "\n"
           "  init_transactions() must have been called successfully (once)\n"
           "  before this function is called.\n"
           "\n"
-          "  Any messages produced or offsets sent to a transacton, after the\n"
-          "  successful return of this function will be part of the\n"
+          "  Any messages produced or offsets sent to a transaction, after\n"
+          "  the successful return of this function will be part of the\n"
           "  transaction and committed or aborted atomically.\n"
           "\n"
           "  Complete the transaction by calling commit_transaction().\n"
           "  Abort the transaction by calling abort_transaction().\n"
-          "\n"
-          "  The offsets should be the next message your application will\n"
-          "  consume.\n"
-          "  i.e. the last processed message's offset + 1 for each partition.\n"
-          "\n"
-          "  Either track the offsets manually during processing or use\n"
-          "  position() (on the consumer) to get the current offsets for\n"
-          "  the partitions assigned to the consumer.\n"
-          "\n"
-          "  Use this method at the end of a consume-transform-produce loop \n"
-          "  prior to committing the transaction with commit_transaction().\n"
           "\n"
         },
         { "send_offsets_to_transaction",
@@ -651,43 +659,90 @@ static PyMethodDef Producer_methods[] = {
           ".. py:function:: send_offsets_to_transaction([positions],"
           " [group_id], [timeout])\n"
           "\n"
-          "  :param list(TopicPartition) positions: current position(offsets)\n"
+          "  :param list(TopicPartition) offsets: current position(offsets)\n"
           "     for the list of partitions.\n"
-          "  :param str group_id: group id for the consumer sending offsets\n"
-          "     to the transaction\n"
+          "  :param str group_id: consumer group id for the consumer sending\n"
+          "     offsets to the transaction\n"
           "  :param float timeout: Amount of time to block in seconds\n"
           "\n"
-          "  Sends consumer position to the consumer group coordinator for\n"
-          "  the consumer group identified by group_id, and marks the offsets\n"
-          "  as part part of the current transaction.\n"
+          "  :raises: KafkaError._STATE if transactions have already been\n"
+          "     started\n"
+          "  :raises: KafkaError._NOT_CONFIGURED if the transactions have not\n"
+          "     configured for the producer instance\n"
+          "  :raises KafkaError.INVALID_PRODUCER_EPOCH if the current\n"
+          "     producer transaction has been fenced by a newer producer\n"
+          "     instance\b"
+          "  :raises KafkaError.TRANSACTIONAL_ID_AUTHORIZATION_FAILED if the\n"
+          "     producer is no longer authorized to perform transactional\n"
+          "     operations\n"
+          "  :raises KafkaError.GROUP_AUTHORIZATION_FAILED if the producer is\n"
+          "     not authorized to write the consumer offsets to the group\n"
+          "     coordinator\n"
+          "  :raises KafkaError._PREV_IN_PROGRESS if a previous call is still\n"
+          "     in progress"
           "\n"
+          "  Sends a list of topic partition offsets to the consumer group\n"
+          "  coordinator for group_id, and marks the offsets as part as part\n"
+          "  part of the current transaction.\n"
           "  These offsets will be considered committed only if the \n"
           "  transaction is committed successfully.\n"
+          "\n"
+          "  The offsets should be the next message your application will\n"
+          "  consume, i.e., the last processed message's offset + 1 for each\n"
+          "  partition.Either track the offsets manually during processing or\n"
+          "  use consumer.position() to get the current offsets for the\n"
+          "  current offsets for the partitions assigned to the consumer"
           "\n"
         },
         { "commit_transaction", (PyCFunction)Producer_commit_transaction,
                                  METH_VARARGS|METH_KEYWORDS,
-        ".. py:function:: commit_transaction([timeout])\n"
-        "\n"
-        "  :param float timeout: The amount of time to block in seconds.\n"
-        "\n"
-        "  Commits the current transaction; started with begin_transaction).\n"
-        "\n"
-        "  As a convenience any outstanding messages will be automatically\n"
-        "  flushed (delivered) prior to performing the commit.\n"
-        "\n"
-        "  If any of the outstanding messages fail permanently the current\n"
-        "  transaction will enter the abortable error state. \n"
-        "  Prior to starting a new transaction, with begin_transaction(),\n"
-        "  the application *must* first call Producer.abort_transaction\n"
-        "\n"
+          ".. py:function:: commit_transaction([timeout])\n"
+          "\n"
+          "  :param float timeout: The amount of time to block in seconds.\n"
+          "\n"
+          "  :raises: KafkaError._STATE if transactions have already been\n"
+          "     started\n"
+          "  :raises: KafkaError._NOT_CONFIGURED if the transactions have not\n"
+          "     configured for the producer instance\n"
+          "  :raises KafkaError._TIMED_OUT if the transaction could not be\n"
+          "     committed within timeout, this may be retried\n"
+          "  :raises KafkaError.INVALID_PRODUCER_EPOCH if the current\n"
+          "     producer transaction has been fenced by a newer producer\n"
+          "     instance\n"
+          "  :raises KafkaError.TRANSACTIONAL_ID_AUTHORIZATION_FAILED if the\n"
+          "     producer is no longer authorized to perform transactional\n"
+          "     operations\n"
+          "\n"
+          "  Commits the current transaction; started with begin_transaction.\n"
+          "\n"
+          "  As a convenience any outstanding messages will be automatically\n"
+          "  flushed (delivered) prior to performing the commit.\n"
+          "\n"
+          "  If any of the outstanding messages fail permanently the current\n"
+          "  transaction will enter the abortable error state. \n"
+          "  Prior to starting a new transaction, with begin_transaction(),\n"
+          "  the application *must* first call Producer.abort_transaction\n"
+          "\n"
         },
         { "abort_transaction", (PyCFunction)Producer_abort_transaction,
                                 METH_VARARGS|METH_KEYWORDS,
-        ".. py:function:: abort_transaction([timeout])\n"
-        "\n"
-        "  :param float timeout: The maximum amount of time to block waiting\n"
-        "       for transaction to abort in seconds.\n"
+          ".. py:function:: abort_transaction([timeout])\n"
+          "\n"
+          "  :param float timeout: The maximum amount of time to block\n"
+          "       waiting for transaction to abort in seconds.\n"
+          "\n"
+          "  :raises: KafkaError._STATE if transactions have already been\n"
+          "     started\n"
+          "  :raises: KafkaError._NOT_CONFIGURED if the transactions have not\n"
+          "     configured for the producer instance\n"
+          "  :raises KafkaError._TIMED_OUT if the transaction could not be\n"
+          "     aborted within timeout, this may be retried\n"
+          "  :raises KafkaError.INVALID_PRODUCER_EPOCH if the current\n"
+          "     producer transaction has been fenced by a newer producer\n"
+          "     instance\n"
+          "  :raises KafkaError.TRANSACTIONAL_ID_AUTHORIZATION_FAILED if the\n"
+          "     producer is no longer authorized to perform transactional\n"
+          "     operations\n"
         "\n"
         "  Aborts the ongoing transaction.\n"
         "\n"

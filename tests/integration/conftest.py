@@ -16,12 +16,20 @@
 # limitations under the License.
 #
 
+import os
+
 import pytest
 
-from cluster_fixture import ClusterFixture
+from cluster_fixture import TrivupFixture, ExternalClusterFixture
 
 
 @pytest.fixture(scope="package")
 def kafka_cluster():
-    return ClusterFixture({'broker_cnt': 1, 'broker_conf': ['transaction.state.log.replication.factor=1',
-                                                            'transaction.state.log.min.isr=1']})
+    env_conf = {k[6:]: v for (k, v) in os.environ.items() if k.startswith('KAFKA')}
+
+    if bool(env_conf):
+        return ExternalClusterFixture(env_conf)
+
+    return TrivupFixture({'broker_cnt': 1,
+                          'broker_conf': ['transaction.state.log.replication.factor=1',
+                                          'transaction.state.log.min.isr=1']})
