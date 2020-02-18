@@ -201,7 +201,7 @@ def consume_committed(conf, topic):
                      'auto.offset.reset': 'earliest',
                      'enable.auto.commit': False,
                      'enable.partition.eof': True,
-                     'error_cb': prefixed_delivery_cb(called_by()), }
+                     'error_cb': prefixed_error_cb(called_by()), }
 
     consumer_conf.update(conf)
     consumer = Consumer(consumer_conf)
