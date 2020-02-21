@@ -71,11 +71,11 @@ class KafkaClusterFixture(object):
 
         return Consumer(self.client_conf(conf))
 
-    def create_topic(self, name, conf=None):
+    def create_topic(self, prefix, conf=None):
         """
         Creates a new topic with this cluster.
 
-        :param str name: topic name
+        :param str prefix: topic name
         :param dict conf: additions/overrides to topic configuration.
         :returns: The topic's name
         :rtype: str
@@ -83,7 +83,9 @@ class KafkaClusterFixture(object):
         if self._admin is None:
             self._admin = AdminClient(self.client_conf())
 
-        future_topic = self._admin.create_topics([NewTopic(name, **self._topic_conf(conf))])
+        name = prefix + str(uuid1())
+        future_topic = self._admin.create_topics([NewTopic(name,
+                                                           **self._topic_conf(conf))])
 
         future_topic.get(name).result()
         return name

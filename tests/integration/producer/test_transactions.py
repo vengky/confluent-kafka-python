@@ -49,7 +49,7 @@ def prefixed_delivery_cb(prefix):
 
 
 def test_commit_transaction(kafka_cluster):
-    output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
+    output_topic = kafka_cluster.create_topic("output_topic")
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
@@ -64,7 +64,7 @@ def test_commit_transaction(kafka_cluster):
 
 
 def test_abort_transaction(kafka_cluster):
-    output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
+    output_topic = kafka_cluster.create_topic("output_topic")
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
@@ -79,7 +79,7 @@ def test_abort_transaction(kafka_cluster):
 
 
 def test_abort_retry_commit_transaction(kafka_cluster):
-    output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
+    output_topic = kafka_cluster.create_topic("output_topic")
 
     producer = kafka_cluster.producer({
         'transactional.id': 'example_transactional_id',
@@ -97,8 +97,8 @@ def test_abort_retry_commit_transaction(kafka_cluster):
 
 
 def test_send_offsets_committed_transaction(kafka_cluster):
-    input_topic = kafka_cluster.create_topic("input_topic" + str(uuid1()))
-    output_topic = kafka_cluster.create_topic("output_topic" + str(uuid1()))
+    input_topic = kafka_cluster.create_topic("input_topic")
+    output_topic = kafka_cluster.create_topic("output_topic")
     error_cb = prefixed_error_cb('test_send_offsets_committed_transaction')
     producer = kafka_cluster.producer({
         'client.id': 'producer1',
