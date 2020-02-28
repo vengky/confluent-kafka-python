@@ -20,10 +20,13 @@ from uuid import uuid4
 
 from six.moves import input
 
-from confluent_kafka import avro
+from confluent_kafka import Producer, Consumer, StringSerializer, \
+    Schema, AvroSerializer, SchemaRegistryClient
+
+from confluent_kafka.serialization.avro import Converter
 
 # Parse Schema used for serializing User class
-record_schema = avro.loads("""
+record_schema = Schema("""
     {
         "namespace": "confluent.io.examples.serialization.avro",
         "name": "User",
@@ -53,16 +56,26 @@ class User(object):
         # Do *not* include in the serialized object.
         self.id = uuid4()
 
-    def to_dict(self):
+
+class UserConverter(Converter):
+
+    def to_dict(self, user):
         """
             The Avro Python library does not support code generation.
             For this reason we must provide a dict representation of our class for serialization.
         """
         return {
-            "name": self.name,
-            "favorite_number": self.favorite_number,
-            "favorite_color": self.favorite_color
+            "name": user.name,
+            "favorite_number": user.favorite_number,
+            "favorite_color": user.favorite_color
         }
+
+    def from_dict(self, record):
+        """
+
+        :return:
+        """
+        return User(**record)
 
 
 def on_delivery(err, msg, obj):
@@ -79,19 +92,21 @@ def on_delivery(err, msg, obj):
             obj.id, msg.topic(), msg.partition(), msg.offset()))
 
 
-def produce(topic, conf):
+def produce_msgs(topic, conf, avro_serializer):
     """
         Produce User records
     """
 
-    from confluent_kafka.avro import AvroProducer
-
-    producer = AvroProducer(conf, default_value_schema=record_schema)
+    producer = Producer(conf,
+                        key_serializer=StringSerializer('utf_8'),
+                        value_serializer=avro_serializer)
 
     print("Producing user records to topic {}. ^c to exit.".format(topic))
     while True:
         # Instantiate new User, populate fields, produce record, execute callbacks.
         record = User()
+        user_id = str(uuid4())
+
         try:
             record.name = input("Enter name: ")
             record.favorite_number = int(input("Enter favorite number: "))
@@ -99,8 +114,9 @@ def produce(topic, conf):
 
             # The message passed to the delivery callback will already be serialized.
             # To aid in debugging we provide the original object to the delivery callback.
-            producer.produce(topic=topic, value=record.to_dict(),
-                             callback=lambda err, msg, obj=record: on_delivery(err, msg, obj))
+            producer.produce(topic=topic, key=user_id,
+                             value=record,
+                             on_delivery=lambda err, msg, obj=record: on_delivery(err, msg, obj))
             # Serve on_delivery callbacks from previous asynchronous produce()
             producer.poll(0)
         except KeyboardInterrupt:
@@ -113,16 +129,19 @@ def produce(topic, conf):
     producer.flush()
 
 
-def consume(topic, conf):
+def consume(topic, conf, avro_serializer):
     """
         Consume User records
     """
-    from confluent_kafka.avro import AvroConsumer
-    from confluent_kafka.avro.serializer import SerializerError
+    from confluent_kafka.serialization import SerializerError
 
-    print("Consuming user records from topic {} with group {}. ^c to exit.".format(topic, conf["group.id"]))
+    print("Consuming user records from topic {} with group {}. ^c to exit.".format(
+        topic, conf["group.id"]))
 
-    c = AvroConsumer(conf, reader_value_schema=record_schema)
+    c = Consumer(conf,
+                 key_serializer=StringSerializer('utf_8'),
+                 value_serializer=avro_serializer)
+
     c.subscribe([topic])
 
     while True:
@@ -137,9 +156,12 @@ def consume(topic, conf):
                 print("Consumer error: {}".format(msg.error()))
                 continue
 
-            record = User(msg.value())
-            print("name: {}\n\tfavorite_number: {}\n\tfavorite_color: {}\n".format(
-                record.name, record.favorite_number, record.favorite_color))
+            record = msg.value()
+            record_id = msg.key()
+            print("id: {}\n\tname: {}\n\tfavorite_number: {}\n\tfavorite_color: {}\n"
+                  .format(record_id,
+                          record.name, record.favorite_number, record.favorite_color))
+
         except SerializerError as e:
             # Report malformed record, discard results, continue polling
             print("Message deserialization failed {}".format(e))
@@ -152,21 +174,21 @@ def consume(topic, conf):
 
 
 def main(args):
-    # handle common configs
-    conf = {'bootstrap.servers': args.bootstrap_servers,
-            'schema.registry.url': args.schema_registry}
-
+    registry_client = SchemaRegistryClient(url=args.schema_registry)
     if args.userinfo:
-        conf['schema.registry.basic.auth.credentials.source'] = 'USER_INFO'
-        conf['schema.registry.basic.auth.user.info'] = args.userinfo
+        registry_client.user_auth(args.userinfo.split(':'))
 
+    avro_serializer = AvroSerializer(registry_client, record_schema,
+                                     converter=UserConverter())
+
+    conf = {'bootstrap.servers': args.bootstrap_servers}
     if args.mode == "produce":
-        produce(args.topic, conf)
+        produce_msgs(args.topic, conf, avro_serializer)
     else:
         # Fallback to earliest to ensure all messages are consumed
         conf['group.id'] = args.group
         conf['auto.offset.reset'] = "earliest"
-        consume(args.topic, conf)
+        consume(args.topic, conf, avro_serializer)
 
 
 if __name__ == '__main__':
@@ -176,11 +198,13 @@ if __name__ == '__main__':
     parser.add_argument('-b', dest="bootstrap_servers",
                         default="localhost:29092", help="Bootstrap broker(s) (host[:port])")
     parser.add_argument('-s', dest="schema_registry",
-                        default="http://localhost:8083", help="Schema Registry (http(s)://host[:port]")
+                        default="http://localhost:8083",
+                        help="Schema Registry (http(s)://host[:port]")
     parser.add_argument('-t', dest="topic", default="example_avro",
                         help="Topic name")
-    parser.add_argument('-u', dest="userinfo", default="ckp_tester:test_secret",
-                        help="Userinfo (username:password); requires Schema Registry with HTTP basic auth enabled")
+    parser.add_argument('-u', dest="userinfo",
+                        help="Userinfo (username:password);"
+                             " requires Schema Registry with HTTP basic auth enabled")
     parser.add_argument('mode', choices=['produce', 'consume'],
                         help="Execution mode (produce | consume)")
     parser.add_argument('-g', dest="group", default="example_avro",

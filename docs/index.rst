@@ -4,10 +4,12 @@ The confluent_kafka API
 A reliable, performant and feature rich Python client for Apache Kafka v0.8 and above.
 
 Clients
-   - :ref:`Consumer <pythonclient_consumer>`
    - :ref:`Producer <pythonclient_producer>`
+   - :ref:`Consumer <pythonclient_consumer>`
    - :ref:`AdminClient <pythonclient_adminclient>`
 
+Serialization
+    - :ref: `Serialization <pythonclient_serialization>`
 
 Supporting classes
     - :ref:`Message <pythonclient_message>`
@@ -21,20 +23,22 @@ Supporting classes
 :ref:`genindex`
 
 
+.. _pythonclient_producer:
+
+Producer
+========
+
+.. autoclass:: confluent_kafka.Producer(conf, key_serializer=None, value_serializer=None)
+   :members:
+   :inherited-members:
+        :member-order: bysource
+
 .. _pythonclient_consumer:
 
 Consumer
 ========
 
 .. autoclass:: confluent_kafka.Consumer
-   :members:
-
-.. _pythonclient_producer:
-
-Producer
-========
-
-.. autoclass:: confluent_kafka.Producer
    :members:
 
 .. _pythonclient_adminclient:
@@ -45,6 +49,14 @@ AdminClient
 .. automodule:: confluent_kafka.admin
    :members:
 
+.. _pythonclient_serialization:
+
+Serialization
+==============
+
+.. automodule:: confluent_kafka.serialization
+   :members:
+
 .. _pythonclient_avro:
 
 Avro
@@ -52,6 +64,7 @@ Avro
 
 .. automodule:: confluent_kafka.avro
    :members:
+
 
 Supporting Classes
 ==================

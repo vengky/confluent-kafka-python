@@ -22,8 +22,8 @@
 
 import unittest
 
-from tests.avro import data_gen
-from tests.avro.mock_schema_registry_client import MockSchemaRegistryClient
+from . import data_gen
+from .mock_schema_registry_client import MockSchemaRegistryClient
 from confluent_kafka import avro
 
 

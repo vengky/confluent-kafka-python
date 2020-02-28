@@ -24,10 +24,10 @@ import struct
 
 import unittest
 
-from tests.avro import data_gen
+from . import data_gen
+from .mock_schema_registry_client import MockSchemaRegistryClient
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-from tests.avro.mock_schema_registry_client import MockSchemaRegistryClient
-from confluent_kafka import avro
+from confluent_kafka import Schema
 
 
 class TestMessageSerializer(unittest.TestCase):
@@ -47,8 +47,8 @@ class TestMessageSerializer(unittest.TestCase):
         self.assertEqual(decoded, expected)
 
     def test_encode_with_schema_id(self):
-        adv = avro.loads(data_gen.ADVANCED_SCHEMA)
-        basic = avro.loads(data_gen.BASIC_SCHEMA)
+        adv = Schema(data_gen.ADVANCED_SCHEMA)
+        basic = Schema(data_gen.BASIC_SCHEMA)
         subject = 'test'
         schema_id = self.client.register(subject, basic)
 
@@ -67,13 +67,11 @@ class TestMessageSerializer(unittest.TestCase):
 
     def test_encode_record_with_schema(self):
         topic = 'test'
-        basic = avro.loads(data_gen.BASIC_SCHEMA)
-        subject = 'test-value'
-        schema_id = self.client.register(subject, basic)
+        basic = Schema(data_gen.BASIC_SCHEMA)
         records = data_gen.BASIC_ITEMS
         for record in records:
             message = self.ms.encode_record_with_schema(topic, basic, record)
-            self.assertMessageIsSame(message, record, schema_id)
+            self.assertMessageIsSame(message, record, basic.id)
 
     def test_decode_none(self):
         """"null/None messages should decode to None"""

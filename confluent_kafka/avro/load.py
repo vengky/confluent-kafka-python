@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 #
 # Copyright 2017 Confluent Inc.
 #
@@ -15,40 +16,17 @@
 # limitations under the License.
 #
 
-import sys
+import warnings
 
-from confluent_kafka.avro.error import ClientError
+from confluent_kafka.schema_registry.schema import AvroSchema
 
+load = AvroSchema.load
+loads = AvroSchema.loads
 
-def loads(schema_str):
-    """ Parse a schema given a schema string """
-    try:
-        if sys.version_info[0] < 3:
-            return schema.parse(schema_str)
-        else:
-            return schema.Parse(schema_str)
-    except schema.SchemaParseException as e:
-        raise ClientError("Schema parse failed: %s" % (str(e)))
+__all__ = ['load', 'loads']
 
 
-def load(fp):
-    """ Parse a schema from a file path """
-    with open(fp) as f:
-        return loads(f.read())
-
-
-# avro.schema.RecordSchema and avro.schema.PrimitiveSchema classes are not hashable. Hence defining them explicitly as
-# a quick fix
-def _hash_func(self):
-    return hash(str(self))
-
-
-try:
-    from avro import schema
-
-    schema.RecordSchema.__hash__ = _hash_func
-    schema.PrimitiveSchema.__hash__ = _hash_func
-    schema.UnionSchema.__hash__ = _hash_func
-
-except ImportError:
-    schema = None
+warnings.warn(
+    "Functions load and loads have been repackaged under confluent_kafka.schema_registry."
+    "This package will be removed in a future version",
+    category=DeprecationWarning, stacklevel=2)
